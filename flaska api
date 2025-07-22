@@ -1,0 +1,3 @@
+@echo off
+:: Start Python backend in a new terminal
+start cmd /k "cd backend && python api_server.py"
