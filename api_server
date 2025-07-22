@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""
+Flask API Server for GFX Threshold Deviation Dashboard
+Bridges the React frontend with Python backend processing
+"""
+
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+import os
+import json
+import threading
+from datetime import datetime
+from pathlib import Path
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from main import GFXDataProcessor, DataRequest, ProcessingStatus
+
+app = Flask(__name__)
+CORS(app)
+
+processor = GFXDataProcessor()
+processing_status = {}
+processing_lock = threading.Lock()
+
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "service": "gfx-dashboard-python"})
+
+
+@app.route('/api/data/download', methods=['POST'])
+def download_data():
+    try:
+        data = request.get_json()
+        required_fields = ['product_type', 'legal_entities', 'source_systems', 'start_date', 'end_date']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": f"Missing required fields: {required_fields}"}), 400
+
+        data_request = DataRequest(
+            product_type=data['product_type'],
+            legal_entities=data['legal_entities'],
+            source_systems=data['source_systems'],
+            start_date=data['start_date'],
+            end_date=data['end_date'],
+            download_trades=data.get('download_trades', True),
+            download_exceptions=data.get('download_exceptions', True)
+        )
+
+        request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        def background_process():
+            with processing_lock:
+                processing_status[request_id] = {"status": "started", "statuses": []}
+            try:
+                futures = []
+                statuses = []
+
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    for legal_entity in data_request.legal_entities:
+                        for source_system in data_request.source_systems:
+                            for env in ["UAT", "PROD"]:
+                                futures.append(
+                                    executor.submit(
+                                        processor.download_trade_data,
+                                        legal_entity,
+                                        source_system,
+                                        env,
+                                        data_request.product_type,
+                                        data_request.start_date,
+                                        data_request.end_date,
+                                    )
+                                )
+
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if isinstance(result, tuple):
+                            records_count, error_msg = result
+                        else:
+                            records_count, error_msg = 0, str(result)
+
+                        status_obj = ProcessingStatus(
+                            legal_entity=legal_entity,
+                            source_system=source_system,
+                            environment=env,
+                            status="completed" if records_count > 0 else "failed",
+                            records_count=records_count,
+                            error=error_msg,
+                        )
+                        statuses.append(status_obj)
+
+                matched_results = {}
+                for status in statuses:
+                    if status.status == "completed" and status.environment in ["UAT", "PROD"]:
+                        key = f"{status.legal_entity}_{status.source_system}"
+                        if key not in matched_results:
+                            matched_results[key] = {}
+                        matched_results[key][status.environment] = {
+                            "count": status.records_count,
+                            "status": status.status
+                        }
+
+                for key, envs in matched_results.items():
+                    if "UAT" in envs and "PROD" in envs:
+                        legal_entity, source_system = key.split("_")
+                        match_result = processor.match_uat_prod_trades(
+                            legal_entity,
+                            source_system,
+                            data_request.product_type,
+                            data_request.start_date,
+                            data_request.end_date,
+                        )
+                        matched_results[key]["matching"] = match_result
+
+                with processing_lock:
+                    processing_status[request_id] = {
+                        "status": "completed",
+                        "statuses": [s.__dict__ for s in statuses],
+                        "matching_results": matched_results,
+                    }
+
+            except Exception as e:
+                with processing_lock:
+                    processing_status[request_id] = {"status": "failed", "error": str(e)}
+
+        thread = threading.Thread(target=background_process)
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "request_id": request_id,
+            "status": "processing_started",
+            "message": "Data download started in background"
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/data/status/<request_id>', methods=['GET'])
+def get_processing_status(request_id):
+    with processing_lock:
+        if request_id not in processing_status:
+            return jsonify({"error": "Request ID not found"}), 404
+        return jsonify(processing_status[request_id])
+
+
+@app.route('/api/thresholds/upload', methods=['POST'])
+def upload_threshold_file():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
+        threshold_mode = request.form.get('threshold_mode', 'group')
+        upload_dir = Path("uploads")
+        upload_dir.mkdir(exist_ok=True)
+
+        file_path = upload_dir / file.filename
+        file.save(file_path)
+        result = processor.process_threshold_file(str(file_path), threshold_mode)
+
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify({"message": "Threshold file uploaded successfully", "result": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/thresholds', methods=['GET'])
+def get_thresholds():
+    try:
+        threshold_mode = request.args.get('mode', 'group')
+        threshold_file = processor.thresholds_dir / f"processed_thresholds_{threshold_mode}.csv"
+        if not threshold_file.exists():
+            return jsonify([])
+
+        df = pd.read_csv(threshold_file)
+        if threshold_mode == 'group':
+            grouped = df.groupby(['Adjusted_Group']).agg({
+                'Original_Threshold': 'max',
+                'Proposed_Threshold': 'max',
+                'Adjusted_Threshold': 'max'
+            }).reset_index()
+            result = [{
+                "id": i + 1,
+                "group": row['Adjusted_Group'],
+                "originalThreshold": row['Original_Threshold'],
+                "proposedThreshold": row['Proposed_Threshold'],
+                "adjustedThreshold": row['Adjusted_Threshold']
+            } for i, row in grouped.iterrows()]
+        else:
+            result = [{
+                "id": i + 1,
+                "legalEntity": row['LegalEntity'],
+                "currency": row['CCY'],
+                "group": row['Adjusted_Group'],
+                "originalThreshold": row['Original_Threshold'],
+                "proposedThreshold": row['Proposed_Threshold'],
+                "adjustedThreshold": row['Adjusted_Threshold']
+            } for i, row in df.iterrows()]
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/export/<data_type>', methods=['GET'])
+def export_data(data_type):
+    try:
+        if data_type == "trades":
+            export_file = processor.base_dir / "exports" / "all_trades.csv"
+            export_file.parent.mkdir(parents=True, exist_ok=True)
+            all_trades = []
+            for uat_file in processor.trades_dir.rglob("UAT/*.gz"):
+                try:
+                    import gzip
+                    with gzip.open(uat_file, 'rt') as f:
+                        df = pd.read_csv(f)
+                        all_trades.append(df)
+                except Exception:
+                    continue
+            if all_trades:
+                combined_df = pd.concat(all_trades, ignore_index=True)
+                combined_df.to_csv(export_file, index=False)
+                return send_file(export_file, as_attachment=True)
+        elif data_type == "thresholds":
+            threshold_file = processor.thresholds_dir / "processed_thresholds_group.csv"
+            if threshold_file.exists():
+                return send_file(threshold_file, as_attachment=True)
+        return jsonify({"error": "No data available for export"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)
