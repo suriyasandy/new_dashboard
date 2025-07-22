@@ -1,0 +1,51 @@
+@echo off
+echo ===============================================
+echo GFX Threshold Dashboard - Windows Setup
+echo Node.js v22.17.1 Compatible
+echo ===============================================
+echo.
+
+REM Check Node.js version
+node -v > temp_version.txt 2>&1
+set /p NODE_VERSION=<temp_version.txt
+del temp_version.txt
+
+echo Current Node.js: %NODE_VERSION%
+echo.
+
+if not exist "node_modules" (
+    echo Installing dependencies...
+    call npm install
+    if errorlevel 1 (
+        echo Error: Failed to install dependencies
+        pause
+        exit /b 1
+    )
+)
+
+echo.
+echo Building project...
+call npm run build
+if errorlevel 1 (
+    echo Error: Failed to build project
+    pause
+    exit /b 1
+)
+
+echo.
+echo Starting GFX Dashboard Server...
+echo.
+echo ✅ Dashboard: http://localhost:5000
+echo ⚠️  Python API (optional): http://localhost:5001
+echo.
+echo Press Ctrl+C to stop the server
+echo.
+
+REM Set environment variable for Windows
+set NODE_ENV=development
+echo.
+echo ℹ️  NOTE: Make sure your server listens on 127.0.0.1 in server/index.ts
+echo    (change from 0.0.0.0 to avoid ENOTSUP errors on Windows)
+echo.
+
+tsx server/index.ts
