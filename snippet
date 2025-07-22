@@ -1,0 +1,35 @@
+import os
+import re
+import pandas as pd
+from collections import defaultdict
+
+# Folder containing your files
+folder_path = "path/to/your/csv/files"  # Change this
+
+# Pattern to match the filenames
+pattern = re.compile(r"^(.*?)_(.*?)_(.*?)_(\d{8})_filtered\.csv$")
+
+# Group files by base pattern
+file_groups = defaultdict(list)
+
+for filename in os.listdir(folder_path):
+    match = pattern.match(filename)
+    if match:
+        product_type, legal_entity, source_system, start_date = match.groups()
+        key = (product_type, legal_entity, source_system)
+        file_groups[key].append((start_date, filename))
+
+# Process each group
+for (product_type, legal_entity, source_system), files in file_groups.items():
+    files.sort()  # Sort by date
+    start_dates = [f[0] for f in files]
+    csv_files = [f[1] for f in files]
+
+    dfs = [pd.read_csv(os.path.join(folder_path, file)) for file in csv_files]
+    combined_df = pd.concat(dfs, ignore_index=True)
+
+    new_filename = f"{product_type}_{legal_entity}_{source_system}_{start_dates[0]}_{start_dates[-1]}_filtered.csv"
+    output_path = os.path.join(folder_path, new_filename)
+    combined_df.to_csv(output_path, index=False)
+
+    print(f"✅ Combined {len(csv_files)} files into: {new_filename}")
