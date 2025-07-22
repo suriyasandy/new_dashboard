@@ -1,0 +1,48 @@
+@echo off
+echo ===============================================
+echo GFX Threshold Dashboard - Windows Setup
+echo Node.js v22.17.1 Compatible | Python Virtual Env
+echo ===============================================
+echo.
+
+:: === Node.js Setup ===
+echo Checking Node.js version...
+node -v > temp_version.txt 2>&1
+set /p NODE_VERSION=<temp_version.txt
+del temp_version.txt
+echo Current Node.js: %NODE_VERSION%
+
+if not exist "node_modules" (
+    echo Installing Node dependencies...
+    call npm install
+    if errorlevel 1 (
+        echo Error: Failed to install Node dependencies
+        pause
+        exit /b 1
+    )
+)
+
+:: === Python Backend Setup ===
+echo.
+echo Setting up Python virtual environment...
+cd backend
+if not exist "venv" (
+    echo Creating virtual environment...
+    python -m venv venv
+)
+
+echo Activating virtual environment...
+call venv\Scripts\activate.bat
+
+echo Installing Python dependencies...
+pip install -r requirements.txt
+
+:: === Start Python API ===
+echo Starting Python API on http://localhost:5001 ...
+start cmd /k "cd backend && call venv\Scripts\activate.bat && python api_server.py"
+cd ..
+
+:: === Start Node Dashboard ===
+echo Starting GFX Dashboard Server...
+set NODE_ENV=development
+tsx server/index.ts
