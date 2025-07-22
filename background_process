@@ -1,0 +1,72 @@
+def background_process():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with processing_lock:
+        processing_status[request_id] = {"status": "started", "statuses": []}
+
+    try:
+        futures = []
+        statuses = []
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for legal_entity in data_request.legal_entities:
+                for source_system in data_request.source_systems:
+                    for env in ["UAT", "PROD"]:
+                        futures.append(
+                            executor.submit(
+                                processor.download_trade_data,
+                                legal_entity,
+                                source_system,
+                                env,
+                                data_request.product_type,
+                                data_request.start_date,
+                                data_request.end_date,
+                            )
+                        )
+
+            for future in as_completed(futures):
+                record_count, error_msg = future.result()
+                status_obj = ProcessingStatus(
+                    legal_entity=legal_entity,
+                    source_system=source_system,
+                    environment=env,
+                    status="completed" if record_count > 0 else "failed",
+                    records_count=record_count,
+                    error=error_msg,
+                )
+                statuses.append(status_obj)
+
+        # Post-processing for matching UAT/PROD pairs
+        matched_results = {}
+        for status in statuses:
+            if status.status == "completed" and status.environment in ["UAT", "PROD"]:
+                key = f"{status.legal_entity}_{status.source_system}"
+                if key not in matched_results:
+                    matched_results[key] = {}
+                matched_results[key][status.environment] = {
+                    "count": status.records_count,
+                    "status": status.status,
+                }
+
+        for key, envs in matched_results.items():
+            if "UAT" in envs and "PROD" in envs:
+                legal_entity, source_system = key.split("_")
+                match_result = processor.match_uat_prod_trades(
+                    legal_entity,
+                    source_system,
+                    data_request.product_type,
+                    data_request.start_date,
+                    data_request.end_date,
+                )
+                matched_results[key]["matching"] = match_result
+
+        with processing_lock:
+            processing_status[request_id] = {
+                "status": "completed",
+                "statuses": [s.__dict__ for s in statuses],
+                "matching_results": matched_results,
+            }
+
+    except Exception as e:
+        with processing_lock:
+            processing_status[request_id] = {"status": "failed", "error": str(e)}
