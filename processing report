@@ -1,14 +1,24 @@
-# Build rows for table
-rows = []
-for name, details in matched_uat_prod_records.items():
-    rows.append({
-        "Dataset": name,
-        "PROD Count": details["PROD"]["count"],
-        "UAT Count": details["UAT"]["count"],
-        "Matched": details["matching"]["matched_count"],
-        "Unmatched": details["matching"]["unmatched_count"],
-        "Status (PROD)": details["PROD"]["status"],
-        "Status (UAT)": details["UAT"]["status"]
-    })
+import streamlit as st
+import pandas as pd
 
-# Conve
+def processing_report(self, response):
+    data = response.json()
+
+    st.header("📊 Processed Trade Data Report")
+
+    # Iterate over datasets and create dashboard-like cards
+    for name, details in data['matching_results'].items():
+        st.subheader(f"📂 {name}")
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("PROD Count", details['PROD']['count'])
+        col2.metric("UAT Count", details['UAT']['count'])
+        col3.metric("Matched", details['matching']['matched_count'])
+        col4.metric("Unmatched", details['matching']['unmatched_count'])
+
+        # Show status in colored boxes
+        col5, col6 = st.columns(2)
+        col5.success(f"PROD Status: {details['PROD']['status']}")
+        col6.success(f"UAT Status: {details['UAT']['status']}")
+
+        st.markdown("---")  # Separator line
