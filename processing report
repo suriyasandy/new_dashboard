@@ -1,0 +1,10 @@
+for name, data in matching_results.items():
+    st.subheader(f"📂 {name}")
+    
+    cols = st.columns(3)
+    cols[0].metric("PROD Count", data["PROD"]["count"])
+    cols[1].metric("UAT Count", data["UAT"]["count"])
+    cols[2].metric("Matched Count", data["matching"]["matched_count"])
+
+    # Show unmatched count as well
+    st.metric("Unmatched Count", da
