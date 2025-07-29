@@ -1,0 +1,116 @@
+from flask import jsonify, request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+import threading
+
+@app.route("/api/data/exception-data-download", methods=["POST"])
+def get_exception_data():
+    try:
+        data = request.get_json()
+        data_input = data["input"]
+
+        data_request = DataRequest(
+            product_type=data_input["product_type"],
+            legal_entities=data_input["legal_entities"],
+            source_systems=data_input["source_systems"],
+            start_date=data_input["start_date"],
+            end_date=data_input["end_date"],
+            download_trades=data_input.get("download_trades", True),
+            download_exceptions=data_input.get("download_exceptions", True)
+        )
+
+        # Unique request id
+        request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        print(f"Initial request: {request_id}")
+
+        # Store processing status
+        with processing_lock:
+            processing_status[request_id] = {"status": "started", "statuses": []}
+
+        def background_process():
+            try:
+                futures = {}
+                matched_results = {}
+
+                # Thread pool to download exceptions in parallel
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    for env in ["UAT", "PROD"]:
+                        for exception_status in ["closed", "new"]:
+                            token = processor.authenticate(env)
+                            future = executor.submit(
+                                processor.download_exception_data,
+                                data_request.start_date,
+                                data_request.end_date,
+                                exception_status,
+                                token,
+                                env
+                            )
+                            futures[future] = (env, exception_status)
+
+                    # Process completed downloads
+                    for future in as_completed(futures):
+                        env, exception_status = futures[future]
+                        result = future.result()
+
+                        if isinstance(result, tuple):
+                            record_count, error_msg = result
+                        else:
+                            record_count, error_msg = result, None
+
+                        key = f"{env}_{exception_status}"
+                        if key not in matched_results:
+                            matched_results[key] = {}
+
+                        matched_results[key][env] = {
+                            "count": record_count,
+                            "status": "completed" if record_count > 0 else "failed",
+                            "error": error_msg
+                        }
+
+                # Consolidate only once per (UAT + PROD) pair
+                final_results = {}
+                for exception_status in ["closed", "new"]:
+                    key = f"{exception_status}"
+                    envs = {env: matched_results.get(f"{env}_{exception_status}", {}).get(env, {}) for env in ["UAT", "PROD"]}
+
+                    if envs["UAT"] and envs["PROD"]:
+                        match_result = processor.consolidated_epe_files(
+                            env="both",
+                            exception_status=exception_status,
+                            start_date=data_request.start_date,
+                            end_date=data_request.end_date
+                        )
+                        final_results[key] = {
+                            "UAT": envs["UAT"],
+                            "PROD": envs["PROD"],
+                            "matching": match_result
+                        }
+
+                # Update processing status
+                with processing_lock:
+                    processing_status[request_id] = {
+                        "status": "completed",
+                        "matching_results": final_results
+                    }
+
+            except Exception as e:
+                print(f"Error: {e}")
+                with processing_lock:
+                    processing_status[request_id] = {
+                        "status": "failed",
+                        "error": str(e)
+                    }
+
+        # Start the background thread
+        thread = threading.Thread(target=background_process)
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "request_id": request_id,
+            "status": "processing_started",
+            "message": "EPE Data download and consolidation started in background"
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Request failed: {str(e)}"}), 404
