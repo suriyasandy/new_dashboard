@@ -1,0 +1,25 @@
+matched_results = {}
+
+# Collect all statuses from futures
+for future in concurrent.futures.as_completed(futures):
+    env, exception_status = futures[future]
+    records_count, error_msg = future.result()
+
+    key = f"{env}_{exception_status}"
+    if key not in matched_results:
+        matched_results[key] = {}
+    matched_results[key][env] = {
+        "count": records_count,
+        "status": "completed" if records_count > 0 else "failed"
+    }
+
+# Now consolidate only ONCE for each UAT+PROD pair
+for key, envs in matched_results.items():
+    if "UAT" in envs and "PROD" in envs:
+        match_result = processor.consolidated_epe_files(
+            env,
+            exception_status,
+            data_request.start_date,
+            data_request.end_date
+        )
+        matched_results[key]["matching"] = match_result
