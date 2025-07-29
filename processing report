@@ -7,4 +7,5 @@ for name, data in matching_results.items():
     cols[2].metric("Matched Count", data["matching"]["matched_count"])
 
     # Show unmatched count as well
-    st.metric("Unmatched Count", da
+    st.metric("Unmatched Count", data["matching"]["unmatched_count"])
+    st.write("---") 
