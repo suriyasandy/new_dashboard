@@ -1,11 +1,14 @@
-for name, data in matching_results.items():
-    st.subheader(f"📂 {name}")
-    
-    cols = st.columns(3)
-    cols[0].metric("PROD Count", data["PROD"]["count"])
-    cols[1].metric("UAT Count", data["UAT"]["count"])
-    cols[2].metric("Matched Count", data["matching"]["matched_count"])
+# Build rows for table
+rows = []
+for name, details in matched_uat_prod_records.items():
+    rows.append({
+        "Dataset": name,
+        "PROD Count": details["PROD"]["count"],
+        "UAT Count": details["UAT"]["count"],
+        "Matched": details["matching"]["matched_count"],
+        "Unmatched": details["matching"]["unmatched_count"],
+        "Status (PROD)": details["PROD"]["status"],
+        "Status (UAT)": details["UAT"]["status"]
+    })
 
-    # Show unmatched count as well
-    st.metric("Unmatched Count", data["matching"]["unmatched_count"])
-    st.write("---") 
+# Conve
