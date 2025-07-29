@@ -22,3 +22,41 @@ def processing_report(self, response):
         col6.success(f"UAT Status: {details['UAT']['status']}")
 
         st.markdown("---")  # Separator line
+
+
+import streamlit as st
+
+def processing_report(self, response):
+    data = response.json()
+    st.header("📊 Processed Trade Data Dashboard")
+
+    # Aggregate totals across datasets
+    total_prod = total_uat = total_matched = total_unmatched = 0
+    for _, details in data['matching_results'].items():
+        total_prod += details['PROD']['count']
+        total_uat += details['UAT']['count']
+        total_matched += details['matching']['matched_count']
+        total_unmatched += details['matching']['unmatched_count']
+
+    # Create 4 KPI cards (columns)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total PROD Trades", total_prod)
+    col2.metric("Total UAT Trades", total_uat)
+    col3.metric("Matched Trades", total_matched)
+    col4.metric("Unmatched Trades", total_unmatched)
+
+    st.markdown("---")
+
+    # Now show metrics for each dataset individually
+    for name, details in data['matching_results'].items():
+        st.subheader(f"📂 {name}")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("PROD Count", details['PROD']['count'])
+        c2.metric("UAT Count", details['UAT']['count'])
+        c3.metric("Matched", details['matching']['matched_count'])
+        c4.metric("Unmatched", details['matching']['unmatched_count'])
+
+        st.caption(f"PROD Status: {details['PROD']['status']} | UAT Status: {details['UAT']['status']}")
+        st.markdown("---")
+
