@@ -1,0 +1,46 @@
+import pandas as pd
+import os
+
+def consolidated_epe_files(self, env: str, start_date: str, end_date: str) -> dict:
+    # File paths
+    uat_file_closed = os.path.join(self.exceptions_dir, "UAT", f"{start_date}_EPE_Data_Closed_{end_date}.csv")
+    uat_file_new = os.path.join(self.exceptions_dir, "UAT", f"{start_date}_EPE_Data_new_{end_date}.csv")
+    prod_file_closed = os.path.join(self.exceptions_dir, "PROD", f"{start_date}_EPE_Data_Closed_{end_date}.csv")
+    prod_file_new = os.path.join(self.exceptions_dir, "PROD", f"{start_date}_EPE_Data_new_{end_date}.csv")
+
+    # Output paths
+    uat_output_path = os.path.join(self.base_dir, "exports", f"EPE_Consolidated_UAT_{start_date}_{end_date}.csv")
+    prod_output_path = os.path.join(self.base_dir, "exports", f"EPE_Consolidated_PROD_{start_date}_{end_date}.csv")
+
+    # Load CSVs
+    uat_closed = pd.read_csv(uat_file_closed, dtype=str)
+    uat_open = pd.read_csv(uat_file_new, dtype=str)
+    prod_closed = pd.read_csv(prod_file_closed, dtype=str)
+    prod_open = pd.read_csv(prod_file_new, dtype=str)
+
+    # Consolidate (append open & closed)
+    uat_combined = pd.concat([uat_closed, uat_open], ignore_index=True)
+    prod_combined = pd.concat([prod_closed, prod_open], ignore_index=True)
+
+    # Save consolidated CSVs
+    uat_combined.to_csv(uat_output_path, index=False)
+    prod_combined.to_csv(prod_output_path, index=False)
+
+    # Build return dictionary
+    result = {
+        "UAT": {
+            "consolidated_len": len(uat_combined),
+            "closed_count": len(uat_closed),
+            "open_count": len(uat_open),
+            "output_file": uat_output_path
+        },
+        "PROD": {
+            "consolidated_len": len(prod_combined),
+            "closed_count": len(prod_closed),
+            "open_count": len(prod_open),
+            "output_file": prod_output_path
+        }
+    }
+
+    print("OMRC EPE Files Pre-Process completed")
+    return result
