@@ -1,0 +1,119 @@
+from flask import jsonify, request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+import threading
+
+@app.route("/api/data/exception-data-download", methods=["POST"])
+def get_exception_data():
+    try:
+        data = request.get_json()
+        _input = data["input"]
+
+        data_request = DataRequest(
+            product_type=_input["product_type"],
+            legal_entities=_input["legal_entities"],
+            source_systems=_input["source_systems"],
+            start_date=_input["start_date"],
+            end_date=_input["end_date"],
+            download_trades=_input.get("download_trades", True),
+            download_exceptions=_input.get("download_exceptions", True)
+        )
+
+        request_id = f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        print(f"Initial request: {request_id}")
+
+        # Mark as started
+        with processing_lock:
+            processing_status[request_id] = {"status": "started", "statuses": []}
+
+        def background_process():
+            try:
+                matched_results = {}
+                futures = {}
+
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    for env in ["UAT", "PROD"]:
+                        for exception_status in ["closed", "new"]:
+                            print(f"Submitting download: {env}-{exception_status}")
+                            token = processor.authenticate(env)
+                            futures[executor.submit(
+                                processor.download_exception_data,
+                                data_request.start_date,
+                                data_request.end_date,
+                                exception_status,
+                                token,
+                                env
+                            )] = (env, exception_status)
+
+                    for future in as_completed(futures):
+                        env, exception_status = futures[future]
+                        try:
+                            result = future.result(timeout=120)  # avoid infinite wait
+                        except Exception as e:
+                            print(f"Error downloading {env}-{exception_status}: {e}")
+                            matched_results.setdefault(exception_status, {})[env] = {
+                                "count": 0,
+                                "status": "failed",
+                                "error": str(e)
+                            }
+                            continue
+
+                        if isinstance(result, tuple):
+                            record_count, error_msg = result
+                        else:
+                            record_count, error_msg = result, None
+
+                        matched_results.setdefault(exception_status, {})[env] = {
+                            "count": record_count,
+                            "status": "completed" if record_count > 0 else "failed",
+                            "error": error_msg
+                        }
+                        print(f"Finished: {env}-{exception_status} => {record_count}")
+
+                # Now consolidate UAT + PROD for each exception_status
+                final_results = {}
+                for exception_status, envs in matched_results.items():
+                    if "UAT" in envs and "PROD" in envs:
+                        try:
+                            match_result = processor.consolidated_epe_files(
+                                env="both",
+                                exception_status=exception_status,
+                                start_date=data_request.start_date,
+                                end_date=data_request.end_date
+                            )
+                            envs["matching"] = match_result
+                        except Exception as e:
+                            print(f"Error consolidating {exception_status}: {e}")
+                            envs["matching"] = {"error": str(e)}
+
+                    final_results[exception_status] = envs
+
+                # Update processing status
+                with processing_lock:
+                    processing_status[request_id] = {
+                        "status": "completed" if final_results else "failed",
+                        "matching_results": final_results
+                    }
+                print(f"Process complete for {request_id}")
+
+            except Exception as e:
+                print(f"Background process failed: {e}")
+                with processing_lock:
+                    processing_status[request_id] = {
+                        "status": "failed",
+                        "error": str(e)
+                    }
+
+        # Launch background thread
+        thread = threading.Thread(target=background_process)
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            "request_id": request_id,
+            "status": "processing_started",
+            "message": "EPE Data download and consolidation started in background"
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Request failed: {str(e)}"}), 404
