@@ -7,7 +7,7 @@ def get_processing_status(request_id):
 
         status_data = processing_status[request_id]
 
-        # Only clean up JSON for Impact Analysis
+        # Apply fix only for Impact Analysis
         if "Impact_Analysis" in status_data:
             import json, pandas as pd, numpy as np
             from datetime import datetime
@@ -20,9 +20,9 @@ def get_processing_status(request_id):
                 if isinstance(obj, (np.int64, np.float64)):
                     return float(obj)
                 return obj
-            
-            cleaned_data = json.loads(json.dumps(status_data, default=safe_convert))
-            return jsonify(cleaned_data)
 
-        # For trade and exception downloads, return as-is
+            safe_data = json.loads(json.dumps(status_data, default=safe_convert))
+            return jsonify(safe_data)
+
+        # For trades and exceptions: return as-is
         return jsonify(status_data)
