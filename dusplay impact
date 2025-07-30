@@ -1,0 +1,37 @@
+import pandas as pd
+import streamlit as st
+
+def display_impact_analysis(data):
+    # Extract the "impact_results" section
+    impact_results = data.get("impact_results", {})
+
+    rows = []
+    for key, details in impact_results.items():
+        impact_analysis = details.get("Impact_Analysis", {})
+
+        rows.append({
+            "Dataset": key,
+            "Legal Entity": impact_analysis.get("LegalEntity", ""),
+            "Source": impact_analysis.get("Source", ""),
+            "Start-End": key.split("_")[-2] + " to " + key.split("_")[-1],  # parse date from key
+            "Total Volume": impact_analysis.get("Tot_Vol", 0),
+            "Original Alerts": impact_analysis.get("OrigAlerts", 0),
+            "Projected Alerts": impact_analysis.get("ProjAlerts", 0),
+            "Adjusted Alerts": impact_analysis.get("AdjAlerts", 0),
+            "Status": details.get("status", "")
+        })
+
+    # Convert to DataFrame
+    df = pd.DataFrame(rows)
+
+    st.subheader("📊 Impact Analysis Summary")
+    st.table(df)
+
+    # Dropdown to select dataset for deeper analysis
+    selected_dataset = st.selectbox("Select Dataset for Analysis:", df["Dataset"])
+    st.write(f"➡️ You selected: **{selected_dataset}**")
+
+    return selected_dataset
+
+# Example usage
+# selected = display_impact_analysis(response.json())
