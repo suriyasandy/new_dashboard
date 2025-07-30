@@ -1,3 +1,5 @@
+
+
 def impact_analysis_report(impact_results: dict):
     # Extract data from impact_results
     rows = []
