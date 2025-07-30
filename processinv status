@@ -6,23 +6,26 @@ def get_processing_status(request_id):
             return jsonify({"error": "Request ID not found"}), 404
 
         status_data = processing_status[request_id]
+        print("RAW STATUS DATA:", status_data)  # Debug
 
-        # Apply fix only for Impact Analysis
-        if "Impact_Analysis" in status_data:
-            import json, pandas as pd, numpy as np
-            from datetime import datetime
+        import json
+        from datetime import datetime
+        import pandas as pd, numpy as np
 
-            def safe_convert(obj):
-                if isinstance(obj, (datetime, pd.Timestamp)):
-                    return obj.isoformat()
-                if isinstance(obj, (pd.DataFrame, pd.Series)):
-                    return obj.to_dict(orient="records")
-                if isinstance(obj, (np.int64, np.float64)):
-                    return float(obj)
-                return obj
+        def safe_convert(obj):
+            # Debug print for each non-serializable object
+            print("Non-serializable:", type(obj), obj)
+            if isinstance(obj, (datetime, pd.Timestamp)):
+                return obj.isoformat()
+            if isinstance(obj, (pd.DataFrame, pd.Series)):
+                return obj.to_dict(orient="records")
+            if isinstance(obj, (np.int64, np.float64)):
+                return float(obj)
+            return str(obj)   # Last resort: force string
 
-            safe_data = json.loads(json.dumps(status_data, default=safe_convert))
-            return jsonify(safe_data)
-
-        # For trades and exceptions: return as-is
-        return jsonify(status_data)
+        try:
+            cleaned_data = json.loads(json.dumps(status_data, default=safe_convert))
+            return jsonify(cleaned_data)
+        except Exception as e:
+            print("CLEAN FAILED:", e)
+            return jsonify({"error": f"Serialization failed: {e}"}), 500
