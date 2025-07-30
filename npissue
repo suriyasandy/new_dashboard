@@ -1,0 +1,42 @@
+@app.route('/api/data/status/<request_id>', methods=['GET'])
+def get_processing_status(request_id):
+    print(f"/api/data/status/<{request_id}>")
+    with processing_lock:
+        if request_id not in processing_status:
+            return jsonify({"error": "Request ID not found"}), 404
+
+        status_data = processing_status[request_id]
+        print("RAW STATUS DATA:", status_data)  # Debug
+
+        # ---- Final Safe Cleaner ----
+        def clean_to_str(obj):
+            import numpy as np
+            import pandas as pd
+            from datetime import datetime
+
+            # Convert NumPy values to str
+            if isinstance(obj, (np.integer, np.floating, np.bool_)):
+                return str(obj)
+
+            # Convert datetime or pandas Timestamp
+            if isinstance(obj, (datetime, pd.Timestamp)):
+                return obj.isoformat()
+
+            # Convert DataFrames and Series
+            if isinstance(obj, pd.DataFrame):
+                return obj.to_dict(orient="records")
+            if isinstance(obj, pd.Series):
+                return obj.to_list()
+
+            # Handle dict or list recursively
+            if isinstance(obj, dict):
+                return {k: clean_to_str(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [clean_to_str(v) for v in obj]
+
+            # Fallback: force everything else to string
+            return str(obj)
+
+        cleaned_data = clean_to_str(status_data)
+
+        return jsonify(cleaned_data)
