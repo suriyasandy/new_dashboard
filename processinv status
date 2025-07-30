@@ -1,0 +1,28 @@
+@app.route('/api/data/status/<request_id>', methods=['GET'])
+def get_processing_status(request_id):
+    print(f"/api/data/status/<{request_id}>")
+    with processing_lock:
+        if request_id not in processing_status:
+            return jsonify({"error": "Request ID not found"}), 404
+
+        status_data = processing_status[request_id]
+
+        # Only clean up JSON for Impact Analysis
+        if "Impact_Analysis" in status_data:
+            import json, pandas as pd, numpy as np
+            from datetime import datetime
+
+            def safe_convert(obj):
+                if isinstance(obj, (datetime, pd.Timestamp)):
+                    return obj.isoformat()
+                if isinstance(obj, (pd.DataFrame, pd.Series)):
+                    return obj.to_dict(orient="records")
+                if isinstance(obj, (np.int64, np.float64)):
+                    return float(obj)
+                return obj
+            
+            cleaned_data = json.loads(json.dumps(status_data, default=safe_convert))
+            return jsonify(cleaned_data)
+
+        # For trade and exception downloads, return as-is
+        return jsonify(status_data)
