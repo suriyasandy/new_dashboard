@@ -1,0 +1,49 @@
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+import pandas as pd
+import streamlit as st
+
+def display_impact_analysis_interactive(data):
+    impact_results = data.get("impact_results", {})
+
+    rows = []
+    for key, details in impact_results.items():
+        impact_analysis = details.get("Impact_Analysis", {})
+        rows.append({
+            "Dataset": key,
+            "Legal Entity": impact_analysis.get("LegalEntity", ""),
+            "Source": impact_analysis.get("Source", ""),
+            "Start-End": key.split("_")[-2] + " to " + key.split("_")[-1],
+            "Total Volume": impact_analysis.get("Tot_Vol", 0),
+            "Original Alerts": impact_analysis.get("OrigAlerts", 0),
+            "Projected Alerts": impact_analysis.get("ProjAlerts", 0),
+            "Adjusted Alerts": impact_analysis.get("AdjAlerts", 0),
+            "Status": details.get("status", "")
+        })
+
+    df = pd.DataFrame(rows)
+
+    st.subheader("📊 Impact Analysis Summary")
+
+    # Create grid options for AgGrid
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_pagination(enabled=True, paginationAutoPageSize=False, paginationPageSize=10)
+    gb.configure_selection(selection_mode="single", use_checkbox=True)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+    grid_options = gb.build()
+
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        theme="balham",  # or "streamlit", "alpine"
+        fit_columns_on_grid_load=True
+    )
+
+    # Show selected row
+    selected = grid_response["selected_rows"]
+    if selected:
+        selected_dataset = selected[0]["Dataset"]
+        st.success(f"➡️ Selected Dataset: **{selected_dataset}**")
+        return selected_dataset
+
+    return None
