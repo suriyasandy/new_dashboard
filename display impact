@@ -1,0 +1,30 @@
+def impact_analysis_report(impact_results: dict):
+    # Extract data from impact_results
+    rows = []
+    for dataset, details in impact_results.get("impact_results", {}).items():
+        ia = details.get("Impact_Analysis", {})
+        rows.append({
+            "Dataset": dataset,
+            "Legal Entity": ia.get("LegalEntity", ""),
+            "Source": ia.get("Source", ""),
+            "Total Volume": ia.get("Tot_Vol", ""),
+            "Original Alerts": ia.get("OrigAlerts", ""),
+            "Projected Alerts": ia.get("ProjAlerts", ""),
+            "Adjusted Alerts": ia.get("AdjAlerts", ""),
+            "Status": details.get("status", "")
+        })
+
+    # Check if data exists
+    if not rows:
+        st.warning("⚠️ No impact analysis results found!")
+        return None
+
+    # Convert to DataFrame
+    df = pd.DataFrame(rows)
+
+    # Build AgGrid with selection enabled
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_selection(selection_mode="single", use_checkbox=True)
+    grid_options = gb.build()
+
+    return AgGrid(df, gridOptions=grid_options, height=200)
