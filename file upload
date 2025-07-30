@@ -1,0 +1,10 @@
+files = {
+    "threshold_file": (_input["threshold_file"].name, _input["threshold_file"].getbuffer())
+}
+data = {"edit_mode": _input["edit_mode"]}
+
+threshold_file_resp = requests.post(
+    "http://localhost:5001/api/thresholds/upload",
+    data=data,
+    files=files
+)
