@@ -1,0 +1,65 @@
+import pandas as pd
+from pathlib import Path
+from datetime import datetime, timedelta
+
+BASE_DIR = Path("backend") / "data"
+EXPORTS_DIR = BASE_DIR / "exports" / "kdb_market_data"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# You'll have your existing function:
+# from KDB_GFX_Enrichment.get_kdb_market_data import get_kdb_market_data
+
+def fetch_and_cache_kdb_for_pair_dates(xact_df):
+    """
+    xact_df must contain columns: 'CLEAN CCY Pair', 'trade_date_only' (string 'YYYYMMDD' or similar).
+    Returns nothing; side effect is CSVs under exports/kdb_market_data/{pair}/
+    """
+    # Normalize date strings to date objects (assuming trade_date_only is like '20250715' or '2025-07-15')
+    def parse_trade_date(d):
+        if "-" in d:
+            return datetime.strptime(d, "%Y-%m-%d").date()
+        else:
+            return datetime.strptime(d, "%Y%m%d").date()
+
+    xact_df["trade_date_only_dt"] = xact_df["trade_date_only"].apply(parse_trade_date)
+    # Group by pair to get min/max
+    date_ranges = (
+        xact_df.groupby("CLEAN CCY Pair")["trade_date_only_dt"]
+        .agg(["min", "max"])
+        .reset_index()
+    )
+
+    for _, row in date_ranges.iterrows():
+        ccy_pair = row["CLEAN CCY Pair"]
+        start_date = row["min"]
+        end_date = row["max"]
+
+        pair_dir = EXPORTS_DIR / ccy_pair
+        pair_dir.mkdir(parents=True, exist_ok=True)
+
+        # iterate each day in the range
+        cur_date = start_date
+        while cur_date <= end_date:
+            date_str = cur_date.strftime("%Y-%m-%d")
+            csv_path = pair_dir / f"{date_str}.csv"
+            if csv_path.exists():
+                # already cached
+                cur_date += timedelta(days=1)
+                continue
+
+            # Construct start_time and end_time for that date
+            start_time = f"{date_str}T00:00:00"
+            end_time = f"{date_str}T23:59:59"
+
+            try:
+                # Replace with your actual call signature
+                kdb_market_df = get_kdb_market_data(ccy_pair, start_time, end_time)
+                if kdb_market_df is None or kdb_market_df.empty:
+                    print(f"No market data for {ccy_pair} on {date_str}")
+                else:
+                    # Persist, index=False to get flat CSV
+                    kdb_market_df.to_csv(csv_path, index=False)
+                    print(f"Cached KDB data for {ccy_pair} {date_str}")
+            except Exception as e:
+                print(f"Failed to get KDB data for {ccy_pair} {date_str}: {e}")
+            cur_date += timedelta(days=1)
