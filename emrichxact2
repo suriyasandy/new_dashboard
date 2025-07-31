@@ -1,0 +1,20 @@
+def enrich_xact_with_nearest(trade_df):
+    # example: for each row, load its pair/date market file and pick nearest
+    results = []
+    for idx, row in trade_df.iterrows():
+        ccy_pair = row["CLEAN CCY Pair"]
+        trade_dt = pd.to_datetime(row["trade_date"])
+        market_df = load_cached_market_df(ccy_pair, trade_dt)
+        if market_df is None:
+            continue
+        nearest = find_nearest_market_data(row, market_df)
+        if nearest is not None:
+            # merge or attach bid/ask etc
+            enriched = row.to_dict()
+            enriched.update({
+                "kdb_bid": nearest.get("bid"),
+                "kdb_ask": nearest.get("ask"),
+                "kdb_time": nearest.get("time"),
+            })
+            results.append(enriched)
+    return pd.DataFrame(results)
