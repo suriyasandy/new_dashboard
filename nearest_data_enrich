@@ -1,0 +1,32 @@
+from datetime import timedelta
+
+def load_cached_market_df(ccy_pair: str, date: pd.Timestamp) -> pd.DataFrame | None:
+    date_str = date.strftime("%Y-%m-%d")
+    csv_path = EXPORTS_DIR / ccy_pair / f"{date_str}.csv"
+    if not csv_path.exists():
+        return None
+    df = pd.read_csv(csv_path)
+    # ensure timestamp column is parsed to datetime
+    if "time" in df.columns:
+        df["time"] = pd.to_datetime(df["time"])
+    elif "kdb_market_time" in df.columns:  # if your query returns different name
+        df["time"] = pd.to_datetime(df["kdb_market_time"])
+    else:
+        raise KeyError("No expected time column in market data")
+    return df
+
+def find_nearest_market_data(trade_row: pd.Series, market_df: pd.DataFrame, tolerance_minutes=15):
+    """
+    trade_row: must have 'trade_date' (datetime-like)
+    market_df: preloaded for that currency/date
+    Returns the market data row (Series) or None if none within tolerance.
+    """
+    trade_time = pd.to_datetime(trade_row["trade_date"])
+    # compute absolute difference
+    market_df["delta"] = (market_df["time"] - trade_time).abs()
+    candidate = market_df.loc[market_df["delta"] <= pd.Timedelta(minutes=tolerance_minutes)]
+    if candidate.empty:
+        return None
+    # pick minimal delta
+    best = candidate.sort_values("delta").iloc[0]
+    return best.drop(labels=["delta"])
