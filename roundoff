@@ -1,0 +1,14 @@
+import numpy as np
+import pandas as pd
+
+def round_half_up_one_decimal(series: pd.Series) -> pd.Series:
+    sign = np.sign(series)
+    abs_val = np.abs(series)
+    scaled = abs_val * 10  # shift to tenths, so we look at hundredths via fractional part
+    floored = np.floor(scaled)
+    frac = scaled - floored
+    rounded = np.where(frac >= 0.5, floored + 1, floored) / 10.0
+    return sign * rounded
+
+# Example usage:
+xact_df["deviation_rounded"] = round_half_up_one_decimal(xact_df["deviation"])
