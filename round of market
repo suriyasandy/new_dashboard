@@ -1,0 +1,9 @@
+from decimal import Decimal, ROUND_HALF_UP
+
+def round_half_up_val(x, places=4):
+    if pd.isna(x):
+        return x
+    q = Decimal(1).scaleb(-places)  # e.g., Decimal('0.0001')
+    return float(Decimal(str(x)).quantize(q, rounding=ROUND_HALF_UP))
+
+df["price_rounded"] = df["price"].apply(round_half_up_val)
