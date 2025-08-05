@@ -10,3 +10,14 @@ def categorize_alert(row):
         return '🔴 Major'
 
 df['alert_category'] = df.apply(categorize_alert, axis=1)
+
+
+
+summary = (
+    df.groupby(['ccypair', 'alert_category'])
+      .size()
+      .unstack(fill_value=0)
+      .reset_index()
+)
+
+summary['Total_Trades'] = summary.sum(axis=1, numeric_only=True)
