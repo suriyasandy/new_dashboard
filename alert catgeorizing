@@ -1,0 +1,12 @@
+def categorize_alert(row):
+    delta = row['deviation'] - row['final_threshold']
+    if row['deviation'] <= row['final_threshold']:
+        return '✅ No Alert'
+    elif 0 < delta <= 0.05:
+        return '⚠️ Minor'
+    elif 0.05 < delta <= 0.3:
+        return '❗ Moderate'
+    else:
+        return '🔴 Major'
+
+df['alert_category'] = df.apply(categorize_alert, axis=1)
